@@ -1,0 +1,132 @@
+---
+title: "Geospatial Workshop 1"
+author: "Kanika Khanna"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Geospatial visuals and analysis can be relevant, useful tools for so many social scientists. Yet we all don't have the budget, computing power, or time to devote to learning how to use ArcGIS or the like (though a great and powerful tool to have!). R comes to the rescue for a lot of budding scholars and practitioners alike; if you're working with statistics or quantitative data, R is a great skill to have in your arsenal. If you're interested in making simple maps to provide clear, clean visuals of your work, R is up to the task.
+
+This workshop will run through a few ways you can make simple, stagnant maps in R. While there are many packages and technique to do this, today we will focus on a few of the simpler methods that can apply to many projects. After getting a feel for each of these, you might have a favorite and run with that. Alternatively, you may switch between different methods. Regardless, R has that capability
+
+1. Loading Packages
+
+```{r}
+#Install packages
+install.packages("sp")
+install.packages("maps")
+install.packages("tidyr")
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("ggmap")
+install.packages("tidyverse")
+
+## load these packages; if you haven't installed them yet, do so before this step!
+library(sp)
+library(maps)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(ggmap)
+register_google(key = "AIzaSyBalR2jGeuUuSR_eEYeNlvzExe-FvBmnTo")
+```
+
+2. Using maps and ggplot2
+
+We will first be using the maps package to draw a map of the contiguous US and New York State.
+
+```{r}
+maps::map("usa", col = "#dab79f", fill = TRUE)
+map.axes(cex.axis=0.8) 
+maps::map("state", lty = 2, add = TRUE, col = "#0B3B39") # map the state borderline to the US map -- you can look up different hex codes to make the maps more legible to you
+title(main = "Contiguous 48 States", xlab = "Longitude", ylab = "Latitude",
+      cex.lab = 0.8) #cex.lab and cex.axis let's us change the sizes of the axes and texts relative to the default. for this example I've set it at .8 but you can play with this.
+```
+
+The maps package is also capable of drawing maps for other countries. Here's a demo of Italy.
+
+```{r}
+maps::map("italy", col = "#dab79f", fill = TRUE)
+map.axes(cex.axis=0.8) 
+title(main = "Italy", xlab = "Longitude", ylab = "Latitude", 
+      cex.lab = 0.8) #here, this map is drawing the province lines
+```
+
+
+
+
+```{r}
+maps::map('county', region = 'new york', col = "#5E610B")
+map.cities(us.cities, country="NY", col = "#642EFE", cex = 0.5) #the benefit of some of these packages is that they store geographic information in them -- it is just a matter of knowing what commands you need to use to pull them up. Here, I'm using map.cities to pull up cities in New York
+map.axes(cex.axis=.5) 
+title(main = "New York State Counties", xlab = "Longitude", ylab = "Latitude",
+      cex.lab =.5)
+```
+
+A critical part to making any map is having some sort of geographic data for R to draw/latch onto. The maps package is using latitude and longitude to create these visuals. If you're looking to use these geographic structures for something else, it might be useful to extract these drawn maps into dataframes of their own.
+
+```{r}
+#extracting usa map into a dataframe
+usa <- map_data("usa")
+class(usa)
+
+#let's see what it looks like!
+head(usa)
+```
+Now let's see what ggplot2 can do with this.
+```{r}
+ggplot() + geom_polygon(data = usa, aes(x=long, y = lat), fill = "#16AC6C") + 
+  labs(title = "Map of Mainland United States ", x = "longitude", y = "latitude") +
+  coord_fixed(1.3) +
+  theme(panel.background = element_blank())
+```
+
+```{r}
+states <- map_data("state")
+counties <- map_data("county")
+NewYork <- subset(states, region == "new york")
+head(NewYork)
+```
+```{r}
+ny_county <- subset(counties, region == "new york")
+head(ny_county)
+```
+```{r}
+ggplot() + geom_polygon(data = NewYork, aes(x=long, y = lat, fill = subregion)) +
+  geom_polygon(data = ny_county, aes(x=long, y = lat, group = group), color = "white", fill = NA) +
+  labs(title = "Counties in New York State", x = "longitude", y = "latitude") +
+  coord_fixed(1.3) +
+  theme(panel.background = element_blank())
+```
+
+```{r}
+head(state.x77)
+```
+
+```{r}
+library(tidyverse)
+
+df <- state.x77 %>% as.data.frame() %>% rownames_to_column("state")
+df$state <- tolower(df$state)
+
+ggplot(df, aes(map_id = state)) + geom_map(aes(fill = Income), map = states) +
+  expand_limits(x = states$long, y = states$lat) +
+  scale_fill_gradient(low = "white", high = "#16AC6C") +
+  labs(title = "US Per Capita Income by States, 1974", x = "longitude", y = "latitude",
+       caption = "source: https://www.rdocumentation.org/packages/
+       datasets/versions/3.6.1/topics/state") +
+  coord_fixed(1.3) +
+  theme(panel.background = element_blank())
+```
+
+```{r}
+ggplot(df, aes(map_id = state)) + geom_map(aes(fill = Illiteracy), map = states, col = "white") +
+  expand_limits(x = states$long, y = states$lat) +
+  scale_fill_distiller(name = "illiteracy rate", palette = "Spectral") +
+  labs(title = "US Illiteracy Rate Rate per 100,000 Population, 1976", x = "longitude", y = "latitude",
+       caption = "source: https://www.rdocumentation.org/packages/
+       datasets/versions/3.6.1/topics/state") +
+  coord_fixed(1.3) +
+  theme_minimal()
+```
+
