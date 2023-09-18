@@ -1,0 +1,503 @@
+---
+title: "Mapping Census Data"
+author: "Kanika Khanna"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Mapping Census Data
+
+US Census data are some of the most extensive and useful demographic databases available to researchers and practitioners. Yet combing through the data, cleaning it, and maniupulating it adequately to analyze it can be cumbersome if one is dealing with the raw data files directly downloaded through the Census Bureau. Luckily, incredible scholars and programmers have created R packages to faciliate the process of pulling up and extracting Census data for use in R. 
+
+Today, we will be using Kyle Walker's tidycensus to create maps that incorporate Census data. 
+
+## Getting a Census API Key
+
+To effectively use this package, you must have a free Census API key. To obtain one, visit https://api.census.gov/data/key_signup.html and fill out your organization and email. The API key you will use for this is your own -- do not share it with others! It can cause a mess. You can use this API key whenever you run tidycensus now, which is great.
+
+## Setting Up
+
+To use tidycensus, make sure to install the package if you haven't done so already (install.packages("tidycensus")). 
+
+```{r}
+install.packages("tidycensus")
+library(tidycensus)
+ #census_api_key("WRITE YOUR API KEY HERE", install = TRUE)
+ # writing TRUE will store the key into future R sessions; I do this for convenience sake but you do you 
+library(tidyverse)
+library(ggplot2)
+library(tigris) 
+  options(tigris_use_cache = TRUE)
+```
+
+## Culling Data!
+
+To get started, let's ask R to pull state population data from the 2010 Census. This will retrieve population data from Summary File 1 by default.
+
+```{r}
+total_population_10 <- get_decennial(
+  geography = "state", 
+  variables = "P001001",
+  year = 2010)
+```
+We can also ask tidycensus to pull up the 2020 Census -- this command let's us see the Asian population in each state. 
+
+```{r}
+asian_2020 <- get_decennial(
+  geography = "state",
+  variables = "P1_005N",
+  year = 2020,
+  sumfile = "pl"
+)
+head(asian_2020)
+```
+
+
+You do need to know a bit about how the Census tables are structure for each dataset you're pulling from, but once you have the name of the variables to call, you should be in good shape. Don't fret -- while you can consult the SF1 PDF, R has a way too. Let's try loading variables from the 2019 ACS
+
+```{r}
+#loading variables!
+v19 <- load_variables(2019, "acs5", cache = TRUE)
+head(v19)
+```
+
+If you are someone who uses the American Community Survey regularly, great news! You can do that with tidycensus too!
+
+I study poverty, so I'm interested in seeing poverty totals in each state.
+
+
+```{r}
+pov_total <- get_acs(
+  geography = "state", 
+  variables = "B16009_001",
+  year = 2020
+)
+```
+
+The brilliant thing about tidycensus (among many things!) is our ability to get data down to various geographies. When doing this, it is important to know what is available. The 2000 Census is not as granular as its successors re: geography. Moreover, not all variables are available at all geographic levels.
+
+If I'm interested in household incomes of urban areas, there is code for that! Let's look at it.
+```{r}
+hhinc <- get_acs(
+  geography = "urban area", 
+  table = "B19001", 
+  survey = "acs1",
+  year = 2016
+)
+```
+
+```{r}
+cbsa_population <- get_acs(
+  geography = "cbsa",
+  variables = "B01003_001",
+  year = 2020
+)
+```
+
+tidycensus accepts state names (e.g. "New York"), state postal codes (e.g. "NY"), and state FIPS codes (e.g. "36"), so an analyst can use what they are most comfortable with.
+
+Here I am pulling income data by Census tract in my hometown of Richmond County, NY (aka Staten Island).
+
+```{r}
+SI_income <- get_acs(
+  geography = "tract", 
+  variables = "B19013_001", 
+  state = "NY", 
+  county = "Richmond",
+  year = 2020
+)
+```
+You can also retrieve block level data, like so!
+
+```{r}
+brooklyn_blocks <- get_decennial(
+  geography = "block",
+  variables = "H1_001N",
+  state = "NY",
+  county = "Kings",
+  year = 2020,
+  sumfile = "pl"
+)
+```
+```{r}
+NY <- get_acs(
+  geography = "county",
+  state = "NY",
+  variables = c(medinc = "B19013_001",
+                medage = "B01002_001"),
+  year = 2020)
+```
+```{r}
+ny_wide <- get_acs(
+  geography = "county",
+  state = "36",
+  variables = c(medinc = "B19013_001",
+                medage = "B01002_001"),
+  output = "wide",
+  year = 2020
+)
+```
+
+Using tidycensus and tidyverse, we can really start sorting through data and matching it up to the geographies we are interested in.
+
+```{r}
+library(tidycensus)
+library(tidyverse)
+
+queens_components <- get_estimates(
+  geography = "county",
+  product = "components",
+  state = "NY",
+  county = "Queens",
+  year = 2019
+)
+```
+
+```{r}
+manhattan_migration <- get_flows(
+  geography = "county",
+  state = "NY",
+  county = "New York",
+  year = 2019
+)
+```
+
+Let's pull some descriptive statistics using tidycensus and tidyverse. Here we are looking at the median age of county residents across the US.
+
+```{r}
+median_age <- get_acs(
+  geography = "county",
+  variables = "B01002_001",
+  year = 2020
+)
+```
+Now that we've retrieve that data, we can arrange it.
+
+```{r}
+arrange(median_age, estimate)
+```
+```{r}
+arrange(median_age, desc(estimate))
+```
+
+If you want to filter your data by certain parameters, you can do that too!
+```{r}
+filter(median_age, estimate >= 50)
+```
+We are also able to pull up variables that have different categories to them and manipulate and transform them to better suit our analysis or at least general understanding of them. Here we are segmenting racial demographic data in New York State.
+
+```{r}
+race_vars <- c(
+  White = "B03002_003",
+  Black = "B03002_004",
+  Native = "B03002_005",
+  Asian = "B03002_006",
+  HIPI = "B03002_007",
+  Hispanic = "B03002_012"
+)
+
+NY_race <- get_acs(
+  geography = "county",
+  state = "NY",
+  variables = race_vars,
+  summary_var = "B03002_001",
+  year = 2020
+) 
+```
+We can conver this information into percentages as well, rather than raw numbers.
+
+```{r}
+ny_race_percent <- NY_race %>%
+  mutate(percent = 100 * (estimate / summary_est)) %>%
+  select(NAME, variable, percent)
+```
+
+```{r}
+largest_group <- ny_race_percent %>%
+  group_by(NAME) %>%
+  filter(percent == max(percent))
+```
+
+```{r}
+ny_race_percent %>%
+  group_by(variable) %>%
+  summarize(median_pct = median(percent))
+```
+```{r}
+ny_hh_income <- get_acs(
+  geography = "county",
+  table = "B19001",
+  state = "NY",
+  year = 2016
+)
+```
+Rather than allow the Census data to spit out as individual numbers, we might find it more manageable (and clearer for an audience!) to segment income into categories. Here's an example of how one might do that with household income records.
+
+```{r}
+ny_hh_income_recode <- ny_hh_income %>%
+  filter(variable != "B19001_001") %>%
+  mutate(incgroup = case_when(
+    variable < "B19001_008" ~ "below35k", 
+    variable < "B19001_013" ~ "bw35kand75k", 
+    TRUE ~ "above75k"
+  )) 
+```
+
+```{r}
+ny_group_sums <- ny_hh_income_recode %>%
+  group_by(GEOID, incgroup) %>%
+  summarize(estimate = sum(estimate))
+```
+
+## MAPPING!
+
+Now that we have some semblance of pulling and manipulating data with tidycensus, it's time for maps! Which is why we're all here, aren't we? :) 
+
+We will use the tigris package to visualize the data. If you're familiar with GIS, you might have heard of TIGER -- Topologically Integrated Geographic Encoding and Referencing. This holds geographical datasets, like shapefiles, which helps us draw maps in R.
+
+```{r}
+library(tigris)
+
+st <- states()
+class(st)
+st
+```
+Now let's plot the US!
+
+```{r}
+plot(st$geometry)
+```
+You can specify certain geographies you want to see too. Clearly I am very invested in New York, so I am going to draw New York and its counties.
+```{r}
+ny_counties <- counties("NY")
+
+plot(ny_counties$geometry)
+```
+Shaolin gets another shoutout...here are the Census tracts for Richmond County, NY.
+
+
+```{r}
+richmond_tracts <- tracts("NY", "Richmond")
+
+plot(richmond_tracts$geometry)
+```
+
+You can also cull landmarks into a map. Here is a landmark map of Iowa, which I thought would have fewer points (that was rude of me to assume).
+
+```{r}
+ia_landmarks <- landmarks("ia", type = "point")
+
+plot(ia_landmarks$geometry)
+```
+tigris makes it possible for us to draw block groups too -- here is how to call that using Rhode Island as an example.
+
+```{r}
+ri_block_groups <- block_groups("RI")
+
+plot(ri_block_groups$geometry)
+```
+## ggplotting maps!
+
+ggplot2 helps us make beautiful maps using the Census data we pulled and tigris geographies. Once again, let me draw my home borough and its Census tracts.
+
+```{r}
+library(ggplot2)
+
+ggplot(richmond_tracts) + 
+  geom_sf()
+```
+You can also use libraries like mapview to make your maps interactive. We will cover more about interactive maps in the next geospatial session though!
+
+```{r}
+library(mapview)
+
+mapview(richmond_tracts)
+```
+
+## Now about projections...
+
+All Census data sets are stored as NAD83 projections. If you're looking for a projection that works better for you, crsuggest should help.
+
+```{r}
+library(crsuggest)
+
+library(sf)
+
+fl_counties <- counties("FL", cb = TRUE)
+
+st_crs(fl_counties)
+fl_crs <- suggest_crs(fl_counties)
+```
+
+The suggestion here would be to use "Florida GDL Albers," as states like Florida create their own coordinate reference systems based on NAD83. You can transform the Census data to make it comply with this like so.
+
+```{r}
+fl_projected <- st_transform(fl_counties, crs = 3087)
+
+head(fl_projected)
+```
+```{r}
+st_crs(fl_projected)
+```
+
+So now we have Florida in with its proper coordinate system. Let's map it.
+
+```{r}
+options(scipen = 999)
+
+ggplot(fl_counties) + 
+  geom_sf() + 
+  coord_sf(crs = 3087)
+```
+So these are ways to pull up basic geographies and structures in R. Definitely play around with these and figure out what suits your needs. And now...
+
+## Mapping Census Data
+
+At least, we are mapping Census data! Let's use tidycensus to pull income data by Census tract in New York and then map it with ggplot2.
+
+```{r}
+
+ny_income <- get_acs(
+  geography = "tract", 
+  variables = "B19013_001",
+  state = "NY", 
+  year = 2020,
+  geometry = TRUE
+)
+
+ny_income
+```
+
+```{r}
+plot(ny_income["estimate"])
+```
+
+We can also make country maps. Here we start of by pulling the data for median age in the US by state. This will pull the demographic data and the geographic data.
+```{r}
+us_median_age <- get_acs(
+  geography = "state",
+  variables = "B01002_001",
+  year = 2019,
+  survey = "acs1",
+  geometry = TRUE,
+  resolution = "20m"
+) %>%
+  shift_geometry()
+
+plot(us_median_age$geometry)
+```
+And now, we map it!
+```{r}
+ggplot(data = us_median_age, aes(fill = estimate)) + 
+  geom_sf()
+```
+We can customize this with labels, palettes, and the like.
+
+```{r}
+ggplot(data = us_median_age, aes(fill = estimate)) + 
+  geom_sf() + 
+  scale_fill_distiller(palette = "RdPu", 
+                       direction = 1) + 
+  labs(title = "  Median Age by State, 2019",
+       caption = "Data source: 2019 1-year ACS, US Census Bureau",
+       fill = "ACS estimate") + 
+  theme_void()
+```
+We can also create chloropleth maps with data we manipulated. Here, let's map out race data in Tompkins County. First, we are going to pull the data, then mutate it into percentages.
+
+
+```{r}
+tompkins_race <- get_decennial(
+  geography = "tract",
+  state = "NY",
+  county = "Tompkins",
+  variables = c(
+    Hispanic = "P2_002N",
+    White = "P2_005N",
+    Black = "P2_006N",
+    Native = "P2_007N",
+    Asian = "P2_008N"
+  ),
+  summary_var = "P2_001N",
+  year = 2020,
+  geometry = TRUE
+) %>%
+  mutate(percent = 100 * (value / summary_value))
+```
+I'm interested in illustrating the percentage of Black residents in Tompkins County. The tmap package is another way to make chloropleth maps easily.
+
+```{r}
+library(tmap)
+tompkins_black <- filter(tompkins_race, 
+                         variable == "Black")
+
+tm_shape(tompkins_black) + 
+  tm_polygons()
+
+tm_shape(tompkins_black) + 
+  tm_polygons(col = "percent")
+```
+In some instances, it helps to specify how you want R to create the gradient fill. Here, we can see what it looks like when we organize the map into percent quantiles.
+
+```{r}
+tm_shape(tompkins_black) + 
+  tm_polygons(col = "percent",
+          style = "quantile",
+          n = 5,
+          palette = "Purples",
+          title = "2020 US Census") + 
+  tm_layout(title = "Percent Black\nby Census tract",
+            frame = FALSE,
+            legend.outside = TRUE)
+```
+
+We can also see how the map looks with natural "jenks." Here we are also doing a bit more with regards to formatting.
+
+```{r}
+tm_shape(tompkins_black) + 
+  tm_polygons(col = "percent",
+          style = "jenks",
+          n = 5,
+          palette = "Purples",
+          title = "2020 US Census",
+          legend.hist = TRUE) + 
+  tm_layout(title = "Percent Black\nby Census tract",
+            frame = FALSE,
+            legend.outside = TRUE,
+            bg.color = "grey70",
+            legend.hist.width = 5,
+            fontfamily = "Verdana")
+```
+
+There are certain variables where chlorpleth maps might not be what you want to use -- perhaps bubbles are more appropriate in some instances. Here is an example of what that code might look like using the Black percentage variable for Tompkins County.
+
+```{r}
+tm_shape(tompkins_black) + 
+  tm_polygons() + 
+  tm_bubbles(size = "value", alpha = 0.5, 
+             col = "navy",
+             title.size = "Non-Hispanic Black - 2020 US Census") + 
+  tm_layout(legend.outside = TRUE,
+            legend.outside.position = "bottom")
+```
+Finally, with variables like race, you might find that you want to create facet maps -- that is, you want to show Asian, Black, Latinx, and white. Here is a way to do so.
+
+```{r}
+tm_shape(tompkins_race) + 
+  tm_facets(by = "variable", scale.factor = 4) + 
+  tm_fill(col = "percent",
+          style = "quantile",
+          n = 6,
+          palette = "Blues",
+          title = "Percent (2020 US Census)",) + 
+  tm_layout(bg.color = "grey", 
+            legend.position = c(-0.7, 0.15),
+            panel.label.bg.color = "white")
+```
+## Conclusion
+
+This will hopefully help you get started on mapping Census data in R. Kyle Walker's incredible work should not be understated. If you find yourself using this more, you have him to thank!
+
+
