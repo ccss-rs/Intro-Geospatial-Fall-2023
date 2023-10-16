@@ -67,7 +67,7 @@ mutate(pct.asian=pct.asian*100,
 
 summary(housing_data_clean)
 class(housing_data_clean$GEOID)
-as.character(housing_data_clean$GEOID)
+housing_data_clean$GEOID <- as.character(housing_data_clean$GEOID)
 
 ```
 ```{r}
